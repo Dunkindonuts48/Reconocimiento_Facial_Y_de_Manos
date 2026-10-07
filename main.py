@@ -11,6 +11,7 @@ from detection.hands import HandDetector
 
 from recognition.expressions import ExpressionRecognizer
 from recognition.gestures import GestureRecognizer
+from recognition.stability import IdentifierStabilizer
 
 from image_manager.image_manager import ImageManager
 
@@ -74,21 +75,32 @@ def main():
         )
         sys.exit(1)
 
-    # Crear detector facial
-    face_detector = FaceDetector(
-        str(face_model_path)
-    )
+    face_detector = None
+    hand_detector = None
 
-    # Crear detector de manos
-    hand_detector = HandDetector(
-        str(hand_model_path)
-    )
+    try:
+        # Crear detectores dentro del bloque protegido para liberar
+        # la cámara si algún modelo no se puede inicializar.
+        face_detector = FaceDetector(str(face_model_path))
+        hand_detector = HandDetector(str(hand_model_path))
+    except Exception:
+        if face_detector is not None:
+            face_detector.close()
+        cap.release()
+        cv2.destroyAllWindows()
+        raise
 
     # Crear reconocedor de expresiones
     expression_recognizer = ExpressionRecognizer()
 
     # Crear reconocedor de gestos
     gesture_recognizer = GestureRecognizer()
+
+    # Evitar que el identificador cambie por detecciones aisladas.
+    identifier_stabilizer = IdentifierStabilizer(
+        confirmation_frames=5,
+        hold_frames=8,
+    )
 
     # Crear gestor de imágenes
     image_manager = ImageManager(
@@ -122,12 +134,15 @@ def main():
                 * 1000
             )
 
+            # Ambos detectores procesan el frame original.
+            analysis_frame = frame
+
             # -------------------------------------------------
             # DETECCIÓN DE CARA
             # -------------------------------------------------
 
             face_results = face_detector.process(
-                frame,
+                analysis_frame,
                 timestamp_ms,
             )
 
@@ -138,18 +153,12 @@ def main():
                 )
             )
 
-            # Dibujar puntos faciales
-            frame = face_detector.draw(
-                frame,
-                face_results,
-            )
-
             # -------------------------------------------------
             # DETECCIÓN DE MANOS
             # -------------------------------------------------
 
             hand_results = hand_detector.process(
-                frame,
+                analysis_frame,
                 timestamp_ms,
             )
 
@@ -158,7 +167,11 @@ def main():
                 hand_results
             )
 
-            # Dibujar puntos de las manos
+            # Dibujar los puntos después de ambas detecciones.
+            frame = face_detector.draw(
+                frame,
+                face_results,
+            )
             frame = hand_detector.draw(
                 frame,
                 hand_results,
@@ -169,9 +182,13 @@ def main():
             # -------------------------------------------------
 
             if gesture is not None:
-                identifier = gesture
+                detected_identifier = gesture
             else:
-                identifier = expression
+                detected_identifier = expression
+
+            identifier = identifier_stabilizer.update(
+                detected_identifier
+            )
 
             # -------------------------------------------------
             # OBTENER IMAGEN
