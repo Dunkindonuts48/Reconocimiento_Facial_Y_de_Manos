@@ -587,3 +587,48 @@ Vídeo en tiempo real
 ```
 
 Cuando esto funcione correctamente, pasaremos a la detección de la cara.
+
+---
+
+# 14. Salida para Microsoft Teams
+
+Como mejora futura, se plantea permitir que el resultado del reconocimiento pueda utilizarse como cámara virtual en Microsoft Teams.
+
+La cámara del usuario se utilizará internamente para detectar expresiones faciales y gestos, pero la salida enviada a Teams NO mostrará la cara del usuario.
+
+El flujo previsto será:
+
+```text
+Cámara
+   ↓
+Reconocimiento facial y de manos
+   ↓
+Identificador
+   ↓
+Gestor de imágenes
+   ↓
+Solo imagen asociada
+   ↓
+Cámara virtual
+   ↓
+Microsoft Teams
+```
+
+Por ejemplo:
+
+```text
+Sonrisa
+   ↓
+feliz
+   ↓
+Gato_Feliz.jpg
+   ↓
+Teams muestra solamente la imagen
+```
+
+La salida para Teams deberá poder mostrar únicamente la imagen asociada al identificador detectado, sin mostrar la imagen de la cámara ni la cara del usuario.
+
+Como posible solución técnica se estudiará el uso de OBS Studio y OBS Virtual Camera como puente entre la aplicación Python y Microsoft Teams.
+
+Esta funcionalidad queda pendiente y no forma parte de la implementación actual.
+
