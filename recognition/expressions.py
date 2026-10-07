@@ -6,7 +6,6 @@ import math
 class ExpressionRecognizer:
     """Analiza los puntos faciales para reconocer expresiones."""
 
-    # Puntos principales de la boca en MediaPipe Face Landmarker
     MOUTH_LEFT = 61
     MOUTH_RIGHT = 291
     MOUTH_TOP = 13
@@ -28,7 +27,11 @@ class ExpressionRecognizer:
         """
         Analiza una detección facial.
 
-        Devuelve un identificador de expresión.
+        Devuelve:
+
+        feliz
+        triste
+        default
         """
 
         if not results.face_landmarks:
@@ -56,14 +59,57 @@ class ExpressionRecognizer:
         if mouth_width == 0:
             return "default"
 
-        # Relación entre anchura y altura.
-        mouth_ratio = mouth_height / mouth_width
+        # -------------------------------------------------
+        # POSICIÓN DE LAS COMISURAS
+        # -------------------------------------------------
 
-        # Primera regla experimental.
-        #
-        # Una boca suficientemente abierta y ancha
-        # puede corresponder a una sonrisa.
-        if mouth_ratio > 0.20:
+        mouth_center_y = (
+            mouth_top.y
+            + mouth_bottom.y
+        ) / 2
+
+        corners_center_y = (
+            mouth_left.y
+            + mouth_right.y
+        ) / 2
+
+        # Normalizamos respecto a la anchura de la boca.
+        corner_difference = (
+            corners_center_y
+            - mouth_center_y
+        ) / mouth_width
+
+        # -------------------------------------------------
+        # FELIZ
+        # -------------------------------------------------
+
+        # Boca abierta + comisuras hacia arriba.
+        mouth_ratio = (
+            mouth_height
+            / mouth_width
+        )
+
+        if (
+            mouth_ratio > 0.20
+            and corner_difference < -0.03
+        ):
             return "feliz"
+
+        # Una sonrisa más cerrada.
+        if corner_difference < -0.08:
+            return "feliz"
+
+        # -------------------------------------------------
+        # TRISTE
+        # -------------------------------------------------
+
+        # En una expresión triste las comisuras
+        # tienden a caer respecto al centro de la boca.
+        if corner_difference > 0.08:
+            return "triste"
+
+        # -------------------------------------------------
+        # DEFAULT
+        # -------------------------------------------------
 
         return "default"
