@@ -14,6 +14,65 @@ from recognition.gestures import GestureRecognizer
 from recognition.stability import IdentifierStabilizer
 
 from image_manager.image_manager import ImageManager
+from effects.face_filter import FaceModelFilter
+
+
+def create_face_adjustment_controls():
+    """Crea sliders acumulativos para ajustar el modelo sin topes prácticos."""
+    name = "Ajuste 3D (sliders acumulativos)"
+    cv2.namedWindow(name, cv2.WINDOW_AUTOSIZE)
+    controls = (
+        ("Mover X (+/- px)", 500, 1000),
+        ("Mover Y (+/- px)", 500, 1000),
+        ("Escala (+/-)", 500, 1000),
+        ("Girar yaw (+/- grados)", 500, 1000),
+        ("Girar pitch (+/- grados)", 500, 1000),
+        ("Girar roll (+/- grados)", 500, 1000),
+        ("Invertir yaw", 1, 1),
+    )
+    for label, initial, maximum in controls:
+        cv2.createTrackbar(label, name, initial, maximum, lambda _value: None)
+    return name
+
+
+def read_face_adjustments(window_name, state):
+    """Acumula el desplazamiento y recentra los sliders al acercarse al borde."""
+    sliders = {
+        "x": ("Mover X (+/- px)", 1.0),
+        "y": ("Mover Y (+/- px)", 1.0),
+        "yaw": ("Girar yaw (+/- grados)", 1.0),
+        "pitch": ("Girar pitch (+/- grados)", 1.0),
+        "roll": ("Girar roll (+/- grados)", 1.0),
+    }
+    for key, (label, unit_per_tick) in sliders.items():
+        position = cv2.getTrackbarPos(label, window_name)
+        delta = position - state["last"][key]
+        state[key] += delta * unit_per_tick
+        if position < 100 or position > 900:
+            cv2.setTrackbarPos(label, window_name, 500)
+            state["last"][key] = 500
+        else:
+            state["last"][key] = position
+
+    scale_position = cv2.getTrackbarPos("Escala (+/-)", window_name)
+    scale_delta = scale_position - state["last"]["scale"]
+    state["scale"] *= 1.005 ** scale_delta
+    state["scale"] = min(max(state["scale"], 0.01), 1_000_000.0)
+    if scale_position < 100 or scale_position > 900:
+        cv2.setTrackbarPos("Escala (+/-)", window_name, 500)
+        state["last"]["scale"] = 500
+    else:
+        state["last"]["scale"] = scale_position
+
+    state["invert_yaw"] = bool(
+        cv2.getTrackbarPos("Invertir yaw", window_name)
+    )
+    return {
+        "x": state["x"], "y": state["y"],
+        "scale": state["scale"], "yaw": state["yaw"],
+        "pitch": state["pitch"], "roll": state["roll"],
+        "invert_yaw": state["invert_yaw"],
+    }
 
 
 def main():
@@ -32,6 +91,12 @@ def main():
         project_dir
         / "models"
         / "hand_landmarker.task"
+    )
+
+    face_3d_model_path = (
+        project_dir
+        / "models"
+        / "barack_obama.glb"
     )
 
     # Ruta de las imágenes
@@ -56,6 +121,13 @@ def main():
         )
         sys.exit(1)
 
+    if not face_3d_model_path.exists():
+        print(
+            f"No se encuentra el modelo 3D facial: "
+            f"{face_3d_model_path}"
+        )
+        sys.exit(1)
+
     # Comprobar carpeta de imágenes
     if not images_directory.exists():
         print(
@@ -64,10 +136,14 @@ def main():
         )
         sys.exit(1)
 
+    # Cargar el GLB y preparar el renderizador antes de abrir la cámara.
+    face_model_filter = FaceModelFilter(face_3d_model_path)
+
     # Abrir cámara
     cap = cv2.VideoCapture(0)
 
     if not cap.isOpened():
+        face_model_filter.close()
         print(
             "No se ha podido abrir la cámara. "
             "Comprueba que existe y que no está siendo "
@@ -106,6 +182,16 @@ def main():
     image_manager = ImageManager(
         images_directory
     )
+    effect_mode = True
+    adjustment_window = create_face_adjustment_controls()
+    adjustment_state = {
+        # Calibración base indicada por el usuario en la captura.
+        "x": 3.0, "y": -316.0, "scale": 125.0,
+        "yaw": -235.0, "pitch": 3.0, "roll": -3.0,
+        "invert_yaw": True,
+        "last": {"x": 500, "y": 500, "scale": 500,
+                 "yaw": 500, "pitch": 500, "roll": 500},
+    }
 
     print("Cámara abierta.")
     print("MediaPipe Face Landmarker activado.")
@@ -113,7 +199,7 @@ def main():
     print("Reconocimiento de expresiones activado.")
     print("Reconocimiento de gestos activado.")
     print("Gestor de imágenes activado.")
-    print("Pulsa 'q' para salir.")
+    print("Modelo 3D facial activado. Pulsa 'm' para cambiar de modo y 'q' para salir.")
 
     start_time = time.monotonic()
 
@@ -167,16 +253,6 @@ def main():
                 hand_results
             )
 
-            # Dibujar los puntos después de ambas detecciones.
-            frame = face_detector.draw(
-                frame,
-                face_results,
-            )
-            frame = hand_detector.draw(
-                frame,
-                hand_results,
-            )
-
             # -------------------------------------------------
             # DETERMINAR IDENTIFICADOR FINAL
             # -------------------------------------------------
@@ -190,18 +266,30 @@ def main():
                 detected_identifier
             )
 
+            if effect_mode:
+                face_adjustments = read_face_adjustments(
+                    adjustment_window, adjustment_state
+                )
+                frame = face_model_filter.draw(
+                    frame,
+                    face_results,
+                    hand_results,
+                    face_adjustments,
+                )
+            else:
+                frame = face_detector.draw(frame, face_results)
+                frame = hand_detector.draw(frame, hand_results)
+
             # -------------------------------------------------
             # OBTENER IMAGEN
             # -------------------------------------------------
 
-            result_image = (
-                image_manager.get_image(
-                    identifier
-                )
-            )
+            result_image = None
+            if not effect_mode:
+                result_image = image_manager.get_image(identifier)
 
             # Si no encontramos imagen, utilizar default
-            if result_image is None:
+            if not effect_mode and result_image is None:
                 result_image = (
                     image_manager.get_image(
                         "default"
@@ -241,13 +329,41 @@ def main():
 
             cv2.putText(
                 frame,
-                f"ID: {identifier}",
+                f"ID: {identifier} | Modo: {'Modelo 3D' if effect_mode else 'Imagenes'}",
                 (30, 110),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.8,
                 (0, 255, 255),
                 2,
             )
+
+            if effect_mode:
+                cv2.putText(
+                    frame,
+                    face_model_filter.status,
+                    (30, 145),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.55,
+                    (255, 255, 255),
+                    2,
+                )
+                cv2.putText(
+                    frame,
+                    (f"Ajuste X:{face_adjustments['x']:+.0f}px "
+                     f"Y:{face_adjustments['y']:+.0f}px "
+                     f"Escala:{face_adjustments['scale']:.0f}%"),
+                    (30, 175), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                    (255, 255, 255), 1,
+                )
+                cv2.putText(
+                    frame,
+                    (f"Yaw:{face_adjustments['yaw']:+.0f} "
+                     f"Pitch:{face_adjustments['pitch']:+.0f} "
+                     f"Roll:{face_adjustments['roll']:+.0f} "
+                     f"Invertido:{int(face_adjustments['invert_yaw'])}"),
+                    (30, 198), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                    (255, 255, 255), 1,
+                )
 
             # -------------------------------------------------
             # REDIMENSIONAR IMAGEN DE RESULTADO
@@ -301,17 +417,20 @@ def main():
 
             cv2.imshow(
                 "Reconocimiento facial y de manos - "
-                "Pulsa q para salir",
+                "q salir | m cambiar modo",
                 combined,
             )
 
-            # Salir con Q
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q"):
                 break
+            if key == ord("m"):
+                effect_mode = not effect_mode
 
     finally:
         face_detector.close()
         hand_detector.close()
+        face_model_filter.close()
 
         cap.release()
         cv2.destroyAllWindows()

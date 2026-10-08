@@ -1,2 +1,5 @@
 opencv-python
 mediapipe
+numpy
+moderngl
+glcontext

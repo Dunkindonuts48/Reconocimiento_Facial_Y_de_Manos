@@ -4,7 +4,7 @@ Aplicación de escritorio en Python que analiza en tiempo real la imagen de una 
 
 ## Estado del proyecto
 
-La aplicación integra captura de cámara, detección facial y de manos con MediaPipe, reconocimiento heurístico y visualización de la imagen asociada. Es un prototipo: las expresiones se estiman a partir de la forma de la boca y los gestos mediante reglas sobre los puntos de la mano. No se utiliza un modelo entrenado para clasificar emociones.
+La aplicación integra captura de cámara, detección facial y de manos con MediaPipe, reconocimiento heurístico y visualización de resultados. Es un prototipo: las expresiones se estiman a partir de la forma de la boca y los gestos mediante reglas sobre los puntos de la mano. No se utiliza un modelo entrenado para clasificar emociones.
 
 ### Funciones implementadas
 
@@ -14,9 +14,13 @@ La aplicación integra captura de cámara, detección facial y de manos con Medi
 - Gestos: dedo arriba, pulgar arriba y dos manos levantadas.
 - Asociación de identificadores con imágenes locales.
 - Estabilización temporal para reducir cambios por detecciones aisladas.
-- Ventana de escritorio con la cámara y la imagen seleccionada.
+- Modelo facial 3D texturizado desde `models/barack_obama.glb`, ajustado a la pose detectada y renderizado con OpenGL.
+- Repulsores luminosos sobre las palmas.
+- Modo de imágenes original, que se puede recuperar pulsando **m**.
 
-La cámara virtual para Microsoft Teams/OBS sigue pendiente. La aplicación actual muestra la cámara en su propia ventana.
+El filtro se activa por defecto. Pulsa **m** para alternar entre el filtro y el modo de imágenes; pulsa **q** para cerrar. La cámara virtual para Microsoft Teams/OBS sigue pendiente.
+
+Al usar el modelo 3D aparece la ventana **Ajuste 3D (sliders acumulativos)**. Los controles de desplazamiento y giro se recentran al llegar cerca del borde y siguen acumulando el ajuste; la escala aumenta o disminuye de forma multiplicativa. Los valores acumulados se muestran sobre la cámara. **Invertir yaw** cambia el sentido del giro horizontal.
 
 ## Requisitos e instalación
 
@@ -51,6 +55,9 @@ Pulsa **q** para cerrar la ventana. Si no se abre la cámara, comprueba que otra
     recognition/expressions.py      Reglas heurísticas para expresiones
     recognition/gestures.py         Reglas para gestos de manos
     recognition/stability.py        Persistencia temporal de identificadores
+    effects/glb_face_model.py       Lectura y recorte de la malla GLB
+    effects/face_filter.py          Renderizado OpenGL de la cara y efectos de manos
+    models/barack_obama.glb         Modelo 3D facial y textura
     image_manager/image_manager.py  Carga y asociación de imágenes
     models/                         Modelos .task de MediaPipe
     Imagenes/                       Imágenes mostradas por identificador
@@ -81,6 +88,17 @@ IdentifierStabilizer exige que un identificador nuevo se detecte durante cinco f
 ## Limitaciones conocidas
 
 - Las reglas geométricas son sensibles al ángulo de la mano, la distancia a la cámara y la iluminación.
+- El filtro 3D requiere soporte OpenGL en el controlador gráfico de Windows.
 - La expresión se estima solamente con la geometría de la boca. El estado predeterminado indica que las reglas actuales no detectan sonrisa o tristeza; no significa que se haya reconocido una emoción neutral.
 - Un gesto de mano tiene prioridad sobre una expresión facial.
 - La cámara utiliza el índice 0; todavía no hay selector de dispositivo.
+
+## Atribución del modelo 3D
+
+El modelo BARACK OBAMA de LOUIS se distribuye bajo licencia CC BY 4.0. Esta aplicación usa su malla y textura para el seguimiento facial.
+
+- Fuente: https://sketchfab.com/3d-models/barack-obama-3010d6b0fdd843b397fa9e98437bc22a
+- Autor: LOUIS (https://sketchfab.com/louis)
+- Licencia: https://creativecommons.org/licenses/by/4.0/
+
+El renderizado usa OpenGL a través de ModernGL para procesar la malla y su profundidad en GPU. Instala `moderngl` y `glcontext` desde `requirements.txt`.
